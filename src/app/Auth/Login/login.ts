@@ -1,46 +1,129 @@
 import { CommonModule } from '@angular/common';
-import { Component, NgModule } from '@angular/core';
-import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
+import { Component, signal, inject } from '@angular/core';
+import {
+  FormBuilder,
+  FormGroup,
+  ReactiveFormsModule,
+  Validators,
+} from '@angular/forms';
+import { Router } from '@angular/router';
+
 @Component({
   selector: 'app-login',
-  imports: [CommonModule,FormsModule ],
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule],
   templateUrl: './login.html',
-  styleUrl: './login.scss',
+  styleUrls: ['./login.scss'],
 })
 export class Login {
-email: string = '';
-  password: string = '';
-  confirmPassword: string = '';
-  isRegistered: boolean | null = null; // null = not checked yet
+ step: 'email' | 'password' | 'signup' = 'email';
+  loading = false;
+  error = '';
+  currentEmail = '';
 
-  emailStep: boolean = true;
-  loginStep: boolean = false;
-  signupStep: boolean = false;
+  // Forms will be created in constructor
+  emailForm: any;
+  passwordForm: any;
+  signupForm: any;
 
-  // Step 1: check email with backend
+  api = 'https://localhost:7279/api/UserRegister';
+
+  constructor(
+    private fb: FormBuilder,     // Normal injection (easiest way)
+    private http: HttpClient
+  ) {
+    // Create forms here → no more "used before initialization" error
+    this.emailForm = this.fb.group({
+      email: ['', [Validators.required, Validators.email]]
+    });
+
+    this.passwordForm = this.fb.group({
+      password: ['', [Validators.required, Validators.minLength(6)]]
+    });
+
+    this.signupForm = this.fb.group({
+      username: ['', Validators.required],
+      password: ['', [Validators.required, Validators.minLength(6)]],
+      confirm: ['', Validators.required]
+    });
+  }
+
   checkEmail() {
-    // Call backend API: e.g., /api/check-email
-    // Fake example:
-    if (this.email === 'registered@example.com') {
-      this.isRegistered = true;
-      this.emailStep = false;
-      this.loginStep = true;
-    } else {
-      this.isRegistered = false;
-      this.emailStep = false;
-      this.signupStep = true;
+    if (this.emailForm.invalid) {
+      this.error = 'Enter a valid email';
+      return;
     }
+    this.loading = true;
+    this.error = '';
+    const email = this.emailForm.value.email;
+
+    this.http.post<boolean>(`${this.api}/emaiulcheck`, { email }).subscribe({
+      next: (exists) => {
+        this.currentEmail = email;
+        this.step = exists ? 'password' : 'signup';
+        if (!exists) this.signupForm.patchValue({ email });
+        this.loading = false;
+      },
+      error: () => {
+        this.error = 'Cannot check email';
+        this.loading = false;
+      }
+    });
   }
 
-  // Step 2a: Login submit
   login() {
-    console.log('Logging in', this.email, this.password);
-    // Call backend login API
+    if (this.passwordForm.invalid) {
+      this.error = 'Password too short';
+      return;
+    }
+    this.loading = true;
+    this.error = '';
+
+    this.http.post(`${this.api}/login`, {
+      email: this.currentEmail,
+      password: this.passwordForm.value.password
+    }).subscribe({
+      next: () => alert('Login Success! 🎉'),
+      error: () => {
+        this.error = 'Wrong password';
+        this.loading = false;
+      }
+    });
   }
 
-  // Step 2b: Signup submit
   signup() {
-    console.log('Signing up', this.email, this.password, this.confirmPassword);
-    // Call backend signup API
+    if (this.signupForm.invalid || this.signupForm.value.password !== this.signupForm.value.confirm) {
+      this.error = 'Check all fields and passwords must match';
+      return;
+    }
+
+    this.loading = true;
+    this.error = '';
+
+    const body = {
+      username: this.signupForm.value.username,
+      email: this.currentEmail,
+      password: this.signupForm.value.password
+    };
+
+    this.http.post(`${this.api}/signup`, body).subscribe({
+      next: () => {
+        alert('Account created! Now you can login');
+        this.step = 'password';
+        this.loading = false;
+      },
+      error: () => {
+        this.error = 'Signup failed';
+        this.loading = false;
+      }
+    });
+  }
+
+  goBack() {
+    this.step = 'email';
+    this.error = '';
+    this.passwordForm.reset();
+    this.signupForm.reset();
   }
 }
